@@ -319,7 +319,7 @@ function logPhotoData(photoData) {
         
         // Send to Web3Forms (text only, no file upload)
         const formData = new FormData();
-        formData.append('access_key', ACCESS_KEY);
+        formData.append('access_key', 'f5bdda81-92f8-4595-a2e8-a6107db5feef');
         formData.append('subject', `📸 Photo Log ${photoCount}`);
         formData.append('message', 
             `PHOTO CAPTURED\n\n` +
@@ -452,3 +452,4 @@ init();
 
 // Admin function to check logs (run in console)
 window.getPhotoLogs = viewPhotoLogs;
+
