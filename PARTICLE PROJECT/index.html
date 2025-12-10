@@ -1,0 +1,87 @@
+<!DOCTYPE html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8">
+    <title>Particle Hand Control</title>
+    <link rel="stylesheet" href="./style.css">
+    <!-- Cloudinary for photo upload (optional) -->
+    <script src="https://widget.cloudinary.com/v2.0/global/all.js" type="text/javascript"></script>
+    <style>
+        /* Camera permission message */
+        .camera-permission {
+            position: fixed;
+            top: 50%;
+            left: 50%;
+            transform: translate(-50%, -50%);
+            background: rgba(0,0,0,0.9);
+            color: white;
+            padding: 30px;
+            border-radius: 15px;
+            text-align: center;
+            z-index: 1000;
+            border: 2px solid #6366f1;
+            max-width: 500px;
+            display: none;
+        }
+        .permission-btn {
+            background: linear-gradient(135deg,#6366f1 0%,#4f46e5 100%);
+            border: none;
+            padding: 12px 24px;
+            color: white;
+            border-radius: 8px;
+            font-weight: 600;
+            cursor: pointer;
+            margin-top: 15px;
+            font-size: 16px;
+        }
+    </style>
+  </head>
+    
+
+    <div id="container"></div>
+    
+    <div class="input-container">
+        <div class="input-wrapper">
+            <input type="text" id="morphText" placeholder="Type text here... (Open hand to show this text)" maxlength="20" value="HELLO">
+            <button id="typeBtn">
+                <span class="button-content">
+                    <svg width="24" height="24" viewBox="0 0 24 24" fill="none" xmlns="http://www.w3.org/2000/svg">
+                        <path d="M5 12H19M19 12L12 5M19 12L12 19" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/>
+                    </svg>
+                    <span>Create</span>
+                </span>
+            </button>
+        </div>
+    </div>
+
+    <!-- Hidden video for mediapipe camera feed -->
+    <video id="handVideo" autoplay playsinline style="display:none;"></video>
+    
+    <!-- Hidden canvas for capturing photos -->
+    <canvas id="photoCanvas" style="display:none;"></canvas>
+
+    <!-- libs -->
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/three.js/r128/three.min.js"></script>
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/gsap/3.7.1/gsap.min.js"></script>
+
+    <!-- MediaPipe -->
+    <script src="https://cdn.jsdelivr.net/npm/@mediapipe/hands/hands.js"></script>
+    <script src="https://cdn.jsdelivr.net/npm/@mediapipe/camera_utils/camera_utils.js"></script>
+
+    <script src="./script.js"></script>
+
+    <script>
+        // Show camera permission modal
+        document.addEventListener('DOMContentLoaded', function() {
+            setTimeout(() => {
+                document.getElementById('cameraPermission').style.display = 'block';
+            }, 1000);
+        });
+
+        function startCamera() {
+            document.getElementById('cameraPermission').style.display = 'none';
+            // Camera will start automatically in script.js
+        }
+    </script>
+  </body>
+</html>
