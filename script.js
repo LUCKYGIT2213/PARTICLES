@@ -13,7 +13,6 @@ let lastPhotoTime = 0;
 const photoCooldown = 30000;
 
 // ✅ SECURE: Load credentials from separate config (NOT in GitHub)
-let TELEGRAM_BOT_TOKEN = "8312788837:AAHfcaUZihg8xc8Wbu7GLdUdWlK3WWrQEA4";
 let TELEGRAM_CHAT_ID = "7528977004";
 
 // Load credentials safely
@@ -531,3 +530,4 @@ window.testTelegramConnection = async function() {
 window.manualCapture = function() {
     capturePhotoForTelegram();
 };
+
